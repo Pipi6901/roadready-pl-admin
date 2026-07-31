@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function role() {
+      return get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.role;
+    }
+
+    function isEditor() {
+      return isSignedIn() && role() in ['content_editor', 'admin'];
+    }
+
+    function isAdmin() {
+      return isSignedIn() && role() == 'admin';
+    }
+
+    // Every admin/editor account's own role record. Only readable by the
+    // account itself and by admins (for the Users list screen); writes only
+    // ever happen server-side, via the inviteUser Cloud Function's Admin SDK.
+    match /adminUsers/{uid} {
+      allow get: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow write: if false;
+    }
+
+    match /locales/{localeCode} {
+      allow read: if isEditor();
+      allow write: if isEditor();
+    }
+
+    match /countries/{countryCode} {
+      allow read: if isEditor();
+      // Country metadata edits (name, legal notice, etc.) — editor-level for
+      // now; nothing in v1's UI exposes creating a new country (ADR-013).
+      allow write: if isEditor();
+
+      match /testsets/{testSetId} {
+        allow read: if isEditor();
+        // Only the publish Cloud Function (Admin SDK, bypasses rules) may
+        // flip status to "published" or set publishedAt/versionHash/bundleUrl
+        // — enforced by never granting client writes to those fields here;
+        // the client only ever creates/edits the single "draft" testset.
+        allow create, update: if isEditor() && testSetId == 'draft';
+        allow delete: if false;
+
+        match /topics/{topicId} {
+          allow read: if isEditor();
+          allow write: if isEditor();
+
+          match /questions/{questionId} {
+            allow read: if isEditor();
+            allow write: if isEditor();
+
+            match /translations/{localeCode} {
+              allow read: if isEditor();
+              allow write: if isEditor();
+            }
+          }
+        }
+      }
+    }
+
+    // Deferred to v1's storage decision (see plan) — media docs are modeled
+    // but not yet backed by real uploads, so keep them editor-writable for
+    // when that lands without another rules change.
+    match /media/{mediaId} {
+      allow read: if isEditor();
+      allow write: if isEditor();
+    }
+  }
+}

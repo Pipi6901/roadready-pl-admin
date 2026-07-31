@@ -2,6 +2,7 @@
 
 # dependencies
 /node_modules
+functions/node_modules
 /.pnp
 .pnp.*
 .yarn/*
@@ -39,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Firebase Admin SDK service account key — never commit, used locally by
+# scripts/ only. Cloud Functions get their own runtime identity, no key file.
+serviceAccountKey.json

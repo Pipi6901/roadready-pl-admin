@@ -138,6 +138,24 @@ exports.publishTestSet = onCall(async (request) => {
     throw new HttpsError('failed-precondition', `Validation failed:\n${errors.join('\n')}`);
   }
 
+  // Only the media actually referenced by a published question — not the
+  // whole library — keeps content.json from growing with unused uploads.
+  const mediaIds = [...new Set(questions.map((q) => q.mediaId).filter(Boolean))];
+  const mediaDocs = await Promise.all(mediaIds.map((id) => db.collection('media').doc(id).get()));
+  const media = {};
+  for (const doc of mediaDocs) {
+    if (!doc.exists) continue;
+    const m = doc.data();
+    media[doc.id] = {
+      id: doc.id,
+      type: m.type,
+      url: m.cdnUrl,
+      width: m.width ?? null,
+      height: m.height ?? null,
+      durationMs: m.durationMs ?? null,
+    };
+  }
+
   const countriesSnap = await db.collection('countries').where('deletedAt', '==', null).get();
   const countries = countriesSnap.docs.map((d) => {
     const c = d.data();
@@ -180,6 +198,7 @@ exports.publishTestSet = onCall(async (request) => {
     })),
     questions,
     translations: {},
+    media,
     versionHash,
     countries,
     locales,

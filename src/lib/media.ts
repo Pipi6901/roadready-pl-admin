@@ -53,6 +53,11 @@ export async function uploadMedia(file: File, licence: Media['licence']) {
 }
 
 export async function deleteMedia(mediaId: string, storagePath: string) {
-  await deleteObject(ref(storage, storagePath));
+  // Firestore first: its delete rule rejects while usedByQuestions is
+  // non-empty (see firestore.rules). If we deleted the Storage object first
+  // and this rejected — e.g. a question got attached between the client's
+  // check and this call — we'd be left with a Firestore doc pointing at a
+  // file that no longer exists instead of failing cleanly.
   await deleteDoc(doc(mediaCollection(), mediaId));
+  await deleteObject(ref(storage, storagePath));
 }

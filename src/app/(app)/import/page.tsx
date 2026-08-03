@@ -6,7 +6,8 @@ import React from 'react';
 
 import { topicsCollection, questionsCollection } from '@/lib/content';
 import { db } from '@/lib/firebase';
-import type { AnswerOption, QuestionType, Topic } from '@/lib/types';
+import { mediaCollection } from '@/lib/media';
+import type { AnswerOption, Media, QuestionType, Topic } from '@/lib/types';
 
 /** Matches docs/03-content-pipeline.md §3. */
 interface CsvRow {
@@ -33,6 +34,7 @@ interface ParsedQuestion {
   options: AnswerOption[];
   correctOptionId: string;
   explanation: string;
+  mediaId: string | null;
   subtopic: string | null;
   sourceRef: string;
 }
@@ -40,7 +42,7 @@ interface ParsedQuestion {
 const VALID_TYPES: QuestionType[] = ['single_choice', 'case_study', 'hazard_video'];
 const REQUIRED = ['topic_slug', 'question_id', 'type', 'question_en', 'option_a', 'option_b', 'correct', 'explanation_en', 'source_ref'] as const;
 
-function validateRows(rows: CsvRow[]): { questions: ParsedQuestion[]; errors: string[] } {
+function validateRows(rows: CsvRow[], mediaByFilename: Map<string, string>): { questions: ParsedQuestion[]; errors: string[] } {
   const errors: string[] = [];
   const questions: ParsedQuestion[] = [];
   const seenIds = new Set<string>();
@@ -78,6 +80,16 @@ function validateRows(rows: CsvRow[]): { questions: ParsedQuestion[]; errors: st
     }
     seenIds.add(questionId);
 
+    const mediaFilename = row.media_filename?.trim() || null;
+    let mediaId: string | null = null;
+    if (mediaFilename) {
+      mediaId = mediaByFilename.get(mediaFilename) ?? null;
+      if (!mediaId) {
+        errors.push(`Line ${line}: media_filename "${mediaFilename}" was not found in the media library — upload it first.`);
+        return;
+      }
+    }
+
     questions.push({
       topicSlug: row.topic_slug!.trim(),
       questionId,
@@ -86,6 +98,7 @@ function validateRows(rows: CsvRow[]): { questions: ParsedQuestion[]; errors: st
       options,
       correctOptionId: correctLetter,
       explanation: row.explanation_en!.trim(),
+      mediaId,
       subtopic: row.subtopic?.trim() || null,
       sourceRef: row.source_ref!.trim(),
     });
@@ -110,7 +123,14 @@ export default function ImportPage() {
       return;
     }
 
-    const { questions, errors: validationErrors } = validateRows(parsed.data);
+    const mediaSnap = await getDocs(mediaCollection());
+    const mediaByFilename = new Map<string, string>();
+    mediaSnap.docs.forEach((d) => {
+      const m = d.data() as Media;
+      if (!m.deletedAt) mediaByFilename.set(m.filename, d.id);
+    });
+
+    const { questions, errors: validationErrors } = validateRows(parsed.data, mediaByFilename);
     if (validationErrors.length > 0) {
       // No partial import (docs/03-content-pipeline.md §3): report and write nothing.
       setErrors(validationErrors);
@@ -139,34 +159,48 @@ export default function ImportPage() {
         slugToId.set(slug, ref.id);
       }
 
+      // Existing question ids + a per-topic next-sortOrder counter, so
+      // re-importing a question (upsert by question_id) doesn't reshuffle
+      // its position, and brand-new questions land after whatever's already
+      // in that topic instead of colliding back at sortOrder 0.
+      const topicIds = [...new Set(questions.map((q) => slugToId.get(q.topicSlug)!))];
+      const existingIdsByTopic = new Map<string, Set<string>>();
+      const nextSortOrderByTopic = new Map<string, number>();
+      for (const topicId of topicIds) {
+        const existingQuestions = await getDocs(questionsCollection(topicId));
+        existingIdsByTopic.set(topicId, new Set(existingQuestions.docs.map((d) => d.id)));
+        nextSortOrderByTopic.set(topicId, existingQuestions.size);
+      }
+
       // Upsert questions, batched (question_id is the doc ID — re-import
       // updates in place, per §3).
       let batch = writeBatch(db);
       let ops = 0;
       let created = 0;
-      const byTopic = new Map<string, number>();
 
       for (const q of questions) {
         const topicId = slugToId.get(q.topicSlug)!;
-        const sortOrder = byTopic.get(topicId) ?? 0;
-        byTopic.set(topicId, sortOrder + 1);
+        const isNewQuestion = !existingIdsByTopic.get(topicId)!.has(q.questionId);
 
-        batch.set(
-          doc(questionsCollection(topicId), q.questionId),
-          {
-            type: q.type,
-            text: q.text,
-            options: q.options,
-            correctOptionId: q.correctOptionId,
-            explanation: q.explanation,
-            mediaId: null,
-            subtopic: q.subtopic,
-            sourceRef: q.sourceRef,
-            sortOrder,
-            deletedAt: null,
-          },
-          { merge: true },
-        );
+        const payload: Record<string, unknown> = {
+          type: q.type,
+          text: q.text,
+          options: q.options,
+          correctOptionId: q.correctOptionId,
+          explanation: q.explanation,
+          mediaId: q.mediaId,
+          subtopic: q.subtopic,
+          sourceRef: q.sourceRef,
+          deletedAt: null,
+        };
+        if (isNewQuestion) {
+          const sortOrder = nextSortOrderByTopic.get(topicId)!;
+          nextSortOrderByTopic.set(topicId, sortOrder + 1);
+          payload.sortOrder = sortOrder;
+        }
+        // else: leave sortOrder untouched (merge) — preserves its existing position.
+
+        batch.set(doc(questionsCollection(topicId), q.questionId), payload, { merge: true });
         created += 1;
         ops += 1;
         if (ops >= 400) {

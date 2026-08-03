@@ -84,7 +84,7 @@ exports.publishTestSet = onCall(async (request) => {
   if (!countrySnap.exists) throw new HttpsError('not-found', `Unknown country ${countryCode}.`);
 
   const testsetRef = db.collection('countries').doc(countryCode).collection('testsets').doc('draft');
-  const topicsSnap = await testsetRef.collection('topics').where('deletedAt', '==', null).get();
+  const topicsSnap = await testsetRef.collection('topics').where('deletedAt', '==', null).orderBy('sortOrder').get();
 
   const topics = [];
   const questions = [];
@@ -92,7 +92,11 @@ exports.publishTestSet = onCall(async (request) => {
 
   for (const topicDoc of topicsSnap.docs) {
     const topic = topicDoc.data();
-    const questionsSnap = await topicDoc.ref.collection('questions').where('deletedAt', '==', null).get();
+    const questionsSnap = await topicDoc.ref
+      .collection('questions')
+      .where('deletedAt', '==', null)
+      .orderBy('sortOrder')
+      .get();
 
     let count = 0;
     for (const qDoc of questionsSnap.docs) {

@@ -1,12 +1,17 @@
 'use client';
 
-import { addDoc, doc, getDoc, getDocs, updateDoc } from 'firebase/firestore';
+import { addDoc, arrayRemove, arrayUnion, doc, getDoc, getDocs, onSnapshot, orderBy, query, updateDoc } from 'firebase/firestore';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import React from 'react';
 
 import { questionsCollection } from '@/lib/content';
-import type { AnswerOption, Question, QuestionType } from '@/lib/types';
+import { mediaCollection } from '@/lib/media';
+import type { AnswerOption, Media, Question, QuestionType } from '@/lib/types';
+
+interface MediaRow extends Media {
+  id: string;
+}
 
 const EMPTY_OPTIONS: AnswerOption[] = [
   { id: 'A', text: '' },
@@ -27,6 +32,16 @@ export default function QuestionEditPage() {
   const [explanation, setExplanation] = React.useState('');
   const [subtopic, setSubtopic] = React.useState('');
   const [sourceRef, setSourceRef] = React.useState('');
+  const [mediaId, setMediaId] = React.useState<string | null>(null);
+  const [initialMediaId, setInitialMediaId] = React.useState<string | null>(null);
+  const [media, setMedia] = React.useState<MediaRow[] | null>(null);
+
+  React.useEffect(() => {
+    const q = query(mediaCollection(), orderBy('filename'));
+    return onSnapshot(q, (snap) => {
+      setMedia(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Media) })));
+    });
+  }, []);
 
   React.useEffect(() => {
     if (isNew) return;
@@ -41,6 +56,8 @@ export default function QuestionEditPage() {
         setExplanation(q.explanation);
         setSubtopic(q.subtopic ?? '');
         setSourceRef(q.sourceRef);
+        setMediaId(q.mediaId ?? null);
+        setInitialMediaId(q.mediaId ?? null);
       }
       setLoading(false);
     })();
@@ -71,18 +88,30 @@ export default function QuestionEditPage() {
         options,
         correctOptionId,
         explanation: explanation.trim(),
-        mediaId: null,
+        mediaId,
         subtopic: subtopic.trim() || null,
         sourceRef: sourceRef.trim(),
         deletedAt: null,
       };
 
+      let savedQuestionId = questionId;
       if (isNew) {
         const existing = await getDocs(questionsCollection(topicId));
-        await addDoc(questionsCollection(topicId), { ...payload, sortOrder: existing.size });
+        const ref = await addDoc(questionsCollection(topicId), { ...payload, sortOrder: existing.size });
+        savedQuestionId = ref.id;
       } else {
         await updateDoc(doc(questionsCollection(topicId), questionId), payload);
       }
+
+      if (initialMediaId !== mediaId) {
+        if (initialMediaId) {
+          await updateDoc(doc(mediaCollection(), initialMediaId), { usedByQuestions: arrayRemove(savedQuestionId) });
+        }
+        if (mediaId) {
+          await updateDoc(doc(mediaCollection(), mediaId), { usedByQuestions: arrayUnion(savedQuestionId) });
+        }
+      }
+
       router.push(`/topics/${topicId}`);
     } finally {
       setSaving(false);
@@ -164,6 +193,27 @@ export default function QuestionEditPage() {
             rows={3}
             className="mt-1 block w-full rounded-md border border-black/15 px-3 py-2"
           />
+        </label>
+
+        <label className="block text-sm">
+          Media (optional)
+          <select
+            value={mediaId ?? ''}
+            onChange={(e) => setMediaId(e.target.value || null)}
+            className="mt-1 block w-full rounded-md border border-black/15 px-3 py-2"
+          >
+            <option value="">— none —</option>
+            {media?.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.filename} ({m.type})
+              </option>
+            ))}
+          </select>
+          {mediaId ? (
+            <Link href="/media" className="mt-1 inline-block text-xs text-black/50 hover:underline">
+              Manage media library
+            </Link>
+          ) : null}
         </label>
 
         <label className="block text-sm">

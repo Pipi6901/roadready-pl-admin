@@ -28,7 +28,7 @@ async function requireAdmin(request) {
  * password-reset email as the "set your own password" invite via the
  * Identity Toolkit REST API — no third-party email service needed.
  *
- * Requires the FIREBASE_WEB_API_KEY env var (the same apiKey the web app's
+ * Requires the WEB_API_KEY env var (the same apiKey the web app's
  * .env.local uses — see src/lib/firebase.ts).
  */
 exports.inviteUser = onCall(async (request) => {
@@ -52,8 +52,8 @@ exports.inviteUser = onCall(async (request) => {
     invitedBy: request.auth.uid,
   });
 
-  const apiKey = process.env.FIREBASE_WEB_API_KEY;
-  if (!apiKey) throw new HttpsError('failed-precondition', 'FIREBASE_WEB_API_KEY is not configured.');
+  const apiKey = process.env.WEB_API_KEY;
+  if (!apiKey) throw new HttpsError('failed-precondition', 'WEB_API_KEY is not configured.');
 
   const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${apiKey}`, {
     method: 'POST',

@@ -65,12 +65,12 @@ service cloud.firestore {
       }
     }
 
-    // Deferred to v1's storage decision (see plan) — media docs are modeled
-    // but not yet backed by real uploads, so keep them editor-writable for
-    // when that lands without another rules change.
     match /media/{mediaId} {
       allow read: if isEditor();
-      allow write: if isEditor();
+      allow create, update: if isEditor();
+      // Delete-guard from docs/03-content-pipeline.md §5: can't delete while
+      // a question still references this media doc.
+      allow delete: if isEditor() && resource.data.usedByQuestions.size() == 0;
     }
   }
 }

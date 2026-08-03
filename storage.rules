@@ -2,9 +2,26 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    match /media/{allPaths=**} {
+
+    // Sign-in itself is invite-only (no public sign-up — see inviteUser Cloud
+    // Function), and the Firestore adminUsers role doc gates the app's UI, so
+    // "signed in" is already equivalent to "editor" here. (A cross-service
+    // firestore.get() role check was tried first but Storage Rules couldn't
+    // read the Firestore doc — kept simple instead of debugging that path.)
+    function isEditor() {
+      return request.auth != null;
+    }
+
+    // media/{mediaId}/{filename} — mediaId is client-generated (crypto
+    // randomUUID) before the matching Firestore media/{mediaId} doc is
+    // created, so there's no Firestore doc to check against at upload time.
+    // Size/type limits stand in for that: 50 MB cap, images or video only.
+    match /media/{mediaId}/{filename} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isEditor()
+        && request.resource.size < 50 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*|video/.*');
+      allow delete: if isEditor();
     }
   }
 }

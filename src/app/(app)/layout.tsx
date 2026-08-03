@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/auth-context';
 const NAV = [
   { href: '/', label: 'Dashboard' },
   { href: '/topics', label: 'Topics' },
+  { href: '/media', label: 'Media' },
   { href: '/import', label: 'CSV Import' },
   { href: '/users', label: 'Users' },
 ];

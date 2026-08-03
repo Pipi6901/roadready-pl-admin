@@ -5,5 +5,12 @@
   },
   "functions": {
     "source": "functions"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  },
+  "hosting": {
+    "site": "roadready-admin",
+    "source": "."
   }
 }

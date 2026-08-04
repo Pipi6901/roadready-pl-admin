@@ -172,17 +172,26 @@ exports.publishTestSet = onCall(async (request) => {
     };
   });
 
+  // v1 launch language picker: Polish, Urdu, Punjabi, Arabic, Portuguese —
+  // curator call, picked from the DVSA theory test's own official language
+  // list, weighted toward the UK's largest non-English-speaking communities
+  // (2021 census: Polish and Punjabi are the two biggest by a wide margin,
+  // Urdu and Arabic close behind). The other locale docs (Hindi, Spanish,
+  // Spanish-LatAm, Portuguese-BR) stay in Firestore for later — this is a
+  // publish-time filter, not a delete, so re-enabling one is a one-line
+  // change here, no data migration.
+  const V1_LOCALE_CODES = ['pl', 'ur', 'pa', 'ar', 'pt'];
   const localesSnap = await db.collection('locales').get();
-  const locales = localesSnap.docs.map((d) => {
-    const l = d.data();
-    return {
+  const locales = localesSnap.docs
+    .map((d) => d.data())
+    .filter((l) => V1_LOCALE_CODES.includes(l.code))
+    .map((l) => ({
       code: l.code,
       nameNative: l.nameNative,
       nameEnglish: l.nameEnglish,
       direction: l.direction,
       flagEmoji: l.flagEmoji,
-    };
-  });
+    }));
 
   const versionHash = `admin-${countryCode.toLowerCase()}-${Date.now()}`;
 

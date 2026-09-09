@@ -9,7 +9,14 @@ import { db } from './firebase';
  * test-set. Swapping this constant for a country picker is the whole change
  * needed if that ever stops being true.
  */
-export const PRIMARY_COUNTRY_CODE = 'GB';
+/**
+ * The one country this admin instance edits.
+ *
+ * One country per deployment, mirroring the app (ADR-013). Changing it here
+ * without also pointing Firebase at a different project would have this
+ * instance writing Polish content into the British database.
+ */
+export const PRIMARY_COUNTRY_CODE = 'PL';
 export const DRAFT_TESTSET_ID = 'draft';
 
 export function topicsCollection() {

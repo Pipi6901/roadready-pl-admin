@@ -11,7 +11,10 @@ const auth = getAuth();
 const db = getFirestore();
 
 const ROLES = ['content_editor', 'admin'];
-const HOSTING_SITE_ID = 'roadready-80e53';
+// The Polish project's Hosting site. publishTestSet deploys content.json
+// here, and the app fetches it from the matching URL — the two must name
+// the same site or the app silently keeps serving the previous bundle.
+const HOSTING_SITE_ID = 'REPLACE_WITH_PL_FIREBASE_SITE';
 
 async function requireAdmin(request) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');
@@ -69,7 +72,7 @@ exports.inviteUser = onCall(async (request) => {
  * Publish the draft test-set: validate, reassemble it into the exact
  * content.json shape the mobile app already fetches
  * (roadready/src/data/remoteContent.ts's isValidPayload), compute
- * versionHash, deploy to the roadready-80e53 Hosting site, mark the
+ * versionHash, deploy to the Polish Hosting site, mark the
  * testset published.
  */
 exports.publishTestSet = onCall(async (request) => {

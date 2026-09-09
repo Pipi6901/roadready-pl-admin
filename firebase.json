@@ -10,7 +10,7 @@
     "rules": "storage.rules"
   },
   "hosting": {
-    "site": "roadready-admin",
+    "site": "roadready-pl-admin",
     "source": "."
   }
 }

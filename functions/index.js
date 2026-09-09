@@ -14,7 +14,7 @@ const ROLES = ['content_editor', 'admin'];
 // The Polish project's Hosting site. publishTestSet deploys content.json
 // here, and the app fetches it from the matching URL — the two must name
 // the same site or the app silently keeps serving the previous bundle.
-const HOSTING_SITE_ID = 'REPLACE_WITH_PL_FIREBASE_SITE';
+const HOSTING_SITE_ID = 'roadready-pl';
 
 async function requireAdmin(request) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in first.');

@@ -32,6 +32,7 @@ export default function QuestionEditPage() {
   const [explanation, setExplanation] = React.useState('');
   const [subtopic, setSubtopic] = React.useState('');
   const [sourceRef, setSourceRef] = React.useState('');
+  const [points, setPoints] = React.useState<1 | 2 | 3>(1);
   const [mediaId, setMediaId] = React.useState<string | null>(null);
   const [initialMediaId, setInitialMediaId] = React.useState<string | null>(null);
   const [media, setMedia] = React.useState<MediaRow[] | null>(null);
@@ -56,6 +57,7 @@ export default function QuestionEditPage() {
         setExplanation(q.explanation);
         setSubtopic(q.subtopic ?? '');
         setSourceRef(q.sourceRef);
+        setPoints((q.points === 2 || q.points === 3 ? q.points : 1) as 1 | 2 | 3);
         setMediaId(q.mediaId ?? null);
         setInitialMediaId(q.mediaId ?? null);
       }
@@ -91,6 +93,7 @@ export default function QuestionEditPage() {
         mediaId,
         subtopic: subtopic.trim() || null,
         sourceRef: sourceRef.trim(),
+        points,
         deletedAt: null,
       };
 
@@ -233,6 +236,22 @@ export default function QuestionEditPage() {
             onChange={(e) => setSourceRef(e.target.value)}
             className="mt-1 block w-full rounded-md border border-black/15 px-3 py-2"
           />
+        </label>
+
+        <label className="block text-sm">
+          Points
+          <select
+            value={points}
+            onChange={(e) => setPoints(Number(e.target.value) as 1 | 2 | 3)}
+            className="mt-1 block w-full rounded-md border border-black/15 px-3 py-2"
+          >
+            <option value={3}>3 — highest weight (10 per basic paper, 6 per specialist)</option>
+            <option value={2}>2 (6 basic, 4 specialist)</option>
+            <option value={1}>1 (4 basic, 2 specialist)</option>
+          </select>
+          <span className="mt-1 block text-xs text-black/50">
+            The exam scores in points: 74 on offer, 68 to pass. A paper takes a fixed number of each weight.
+          </span>
         </label>
 
         <button

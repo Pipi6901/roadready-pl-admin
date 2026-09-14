@@ -41,12 +41,20 @@ export interface TestSet {
   deletedAt: string | null;
 }
 
+/**
+ * Polish exam class. Basic sections are answered TAK/NIE, specialist ones
+ * A/B/C, and the paper takes a fixed number of each — so the class has to be
+ * on the topic, where the app reads it from.
+ */
+export type QuestionCategory = 'basic' | 'specialist';
+
 export interface Topic {
   name: string;
   slug: string;
   icon: string;
   sortOrder: number;
   color: string | null;
+  category?: QuestionCategory;
   deletedAt: string | null;
 }
 
@@ -66,6 +74,15 @@ export interface Question {
   mediaId: string | null;
   subtopic: string | null;
   sourceRef: string;
+  /**
+   * 1, 2 or 3. The Polish paper is scored in points, not answers (74 in
+   * total, 68 to pass), and it draws a fixed number of each weight — a
+   * question without a weight cannot be placed on a paper at all. The mobile
+   * app treats a missing value as 1.
+   */
+  points?: number;
+  /** Normally inherited from the topic; stored so a question can be read alone. */
+  category?: QuestionCategory;
   sortOrder: number;
   deletedAt: string | null;
 }

@@ -91,6 +91,7 @@ exports.publishTestSet = onCall(async (request) => {
 
   const topics = [];
   const questions = [];
+  const translations = {};
   const errors = [];
 
   for (const topicDoc of topicsSnap.docs) {
@@ -124,7 +125,25 @@ exports.publishTestSet = onCall(async (request) => {
         mediaId: q.mediaId ?? null,
         subtopic: q.subtopic ?? null,
         sourceRef: q.sourceRef,
+        // The Polish paper is built from these two: a fixed number of each
+        // class and each weight. A question that inherits nothing is basic
+        // and worth one point, which is what the app assumes anyway.
+        category: q.category ?? topic.category ?? 'basic',
+        points: q.points === 2 || q.points === 3 ? q.points : 1,
       });
+    }
+
+    // Translations live one document per locale under the topic, keyed by
+    // question id (see scripts/seed.js). Per topic rather than per set so a
+    // full bank stays under Firestore's 1 MB document limit.
+    const translationsSnap = await topicDoc.ref.collection('translations').get();
+    for (const trDoc of translationsSnap.docs) {
+      const locale = trDoc.id;
+      const entries = trDoc.data().questions ?? {};
+      translations[locale] = translations[locale] ?? {};
+      for (const [questionId, tr] of Object.entries(entries)) {
+        if (questions.some((q) => q.id === questionId)) translations[locale][questionId] = tr;
+      }
     }
 
     topics.push({
@@ -134,6 +153,7 @@ exports.publishTestSet = onCall(async (request) => {
       icon: topic.icon,
       sortOrder: topic.sortOrder,
       questionCount: count,
+      category: topic.category ?? 'basic',
     });
   }
 
@@ -175,15 +195,12 @@ exports.publishTestSet = onCall(async (request) => {
     };
   });
 
-  // v1 launch language picker: Polish, Urdu, Punjabi, Arabic, Portuguese —
-  // curator call, picked from the DVSA theory test's own official language
-  // list, weighted toward the UK's largest non-English-speaking communities
-  // (2021 census: Polish and Punjabi are the two biggest by a wide margin,
-  // Urdu and Arabic close behind). The other locale docs (Hindi, Spanish,
-  // Spanish-LatAm, Portuguese-BR) stay in Firestore for later — this is a
-  // publish-time filter, not a delete, so re-enabling one is a one-line
-  // change here, no data migration.
-  const V1_LOCALE_CODES = ['pl', 'ur', 'pa', 'ar', 'pt'];
+  // Translation languages of the Polish app: Ukrainian, Russian, English,
+  // Spanish, Turkish — the five the bank is translated into (see the mobile
+  // repo, src/data/demo-bundle.ts, for why these five). A publish-time
+  // filter, not a delete: another locale doc in Firestore stays there until
+  // it is added here.
+  const V1_LOCALE_CODES = ['uk', 'ru', 'en', 'es', 'tr'];
   const localesSnap = await db.collection('locales').get();
   const locales = localesSnap.docs
     .map((d) => d.data())
@@ -200,16 +217,17 @@ exports.publishTestSet = onCall(async (request) => {
 
   const payload = {
     country: countries.find((c) => c.code === countryCode),
-    topics: topics.map(({ id, name, slug, icon, sortOrder, questionCount }) => ({
+    topics: topics.map(({ id, name, slug, icon, sortOrder, questionCount, category }) => ({
       id,
       name,
       slug,
       icon,
       sortOrder,
       questionCount,
+      category,
     })),
     questions,
-    translations: {},
+    translations,
     media,
     versionHash,
     countries,

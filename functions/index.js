@@ -216,9 +216,14 @@ exports.publishTestSet = onCall(async (request) => {
   // it is added here.
   const V1_LOCALE_CODES = ['uk', 'ru', 'en', 'es', 'tr'];
   const localesSnap = await db.collection('locales').get();
+  // In dashboard order (sortOrder from the seed), not Firestore's document
+  // order — the app splices this list straight into its language picker, and
+  // alphabetical would put English above Ukrainian for an audience that is
+  // three-quarters Ukrainian.
   const locales = localesSnap.docs
     .map((d) => d.data())
     .filter((l) => V1_LOCALE_CODES.includes(l.code))
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
     .map((l) => ({
       code: l.code,
       nameNative: l.nameNative,

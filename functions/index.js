@@ -89,7 +89,9 @@ exports.inviteUser = onCall(async (request) => {
  * versionHash, deploy to the Polish Hosting site, mark the
  * testset published.
  */
-exports.publishTestSet = onCall(async (request) => {
+// The full ministry catalogue is 3.5k questions in 23 topics, read one topic
+// at a time, plus a Hosting deploy of a 4 MB file: well past the 60 s default.
+exports.publishTestSet = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (request) => {
   await requireAdmin(request);
 
   const { countryCode } = request.data ?? {};
@@ -123,10 +125,9 @@ exports.publishTestSet = onCall(async (request) => {
         errors.push(`Question ${qDoc.id} (${topic.slug}): correctOptionId does not match any option.`);
         continue;
       }
-      if (!q.explanation) {
-        errors.push(`Question ${qDoc.id} (${topic.slug}): missing explanation.`);
-        continue;
-      }
+      // No explanation is not an error any more: the official catalogue
+      // ships none, and the app shows just the correct answer in that case.
+      // An editor can still write one question by question.
       count += 1;
       questions.push({
         id: qDoc.id,
@@ -135,7 +136,7 @@ exports.publishTestSet = onCall(async (request) => {
         text: q.text,
         options: q.options,
         correctOptionId: q.correctOptionId,
-        explanation: q.explanation,
+        explanation: q.explanation ?? '',
         mediaId: q.mediaId ?? null,
         subtopic: q.subtopic ?? null,
         sourceRef: q.sourceRef,
@@ -144,8 +145,16 @@ exports.publishTestSet = onCall(async (request) => {
         // and worth one point, which is what the app assumes anyway.
         category: q.category ?? topic.category ?? 'basic',
         points: q.points === 2 || q.points === 3 ? q.points : 1,
+        // Which licence categories the question is asked for (AM, A1, …, PT
+        // — the ministry's codes). Empty or missing means every category;
+        // the app filters its whole bank by the learner's choice.
+        licences: Array.isArray(q.licences) ? q.licences : [],
+        // The catalogue's original media file name, kept so the media
+        // import can be matched up later. Not used by the app itself.
+        sourceMedia: q.sourceMedia ?? null,
       });
     }
+    const questionIds = new Set(questions.map((q) => q.id));
 
     // Translations live one document per locale under the topic, keyed by
     // question id (see scripts/seed.js). Per topic rather than per set so a
@@ -156,7 +165,7 @@ exports.publishTestSet = onCall(async (request) => {
       const entries = trDoc.data().questions ?? {};
       translations[locale] = translations[locale] ?? {};
       for (const [questionId, tr] of Object.entries(entries)) {
-        if (questions.some((q) => q.id === questionId)) translations[locale][questionId] = tr;
+        if (questionIds.has(questionId)) translations[locale][questionId] = tr;
       }
     }
 
@@ -210,11 +219,11 @@ exports.publishTestSet = onCall(async (request) => {
   });
 
   // Translation languages of the Polish app: Ukrainian, Russian, English,
-  // Spanish, Turkish — the five the bank is translated into (see the mobile
-  // repo, src/data/demo-bundle.ts, for why these five). A publish-time
-  // filter, not a delete: another locale doc in Firestore stays there until
-  // it is added here.
-  const V1_LOCALE_CODES = ['uk', 'ru', 'en', 'es', 'tr'];
+  // Spanish, German, Turkish (see the mobile repo, src/data/demo-bundle.ts).
+  // The official catalogue carries English, German and Ukrainian; the rest
+  // are the app's own. A publish-time filter, not a delete: another locale
+  // doc in Firestore stays there until it is added here.
+  const V1_LOCALE_CODES = ['uk', 'ru', 'en', 'es', 'de', 'tr'];
   const localesSnap = await db.collection('locales').get();
   // In dashboard order (sortOrder from the seed), not Firestore's document
   // order — the app splices this list straight into its language picker, and

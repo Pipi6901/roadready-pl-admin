@@ -1,9 +1,13 @@
-// One-time seed: imports the mobile app's current content.json export into
-// Firestore, so the admin starts populated instead of empty.
+// Seed: imports a content.json bundle into Firestore as the draft test-set,
+// so the admin starts populated instead of empty — and re-running it makes
+// Firestore match the file again (stale questions are deleted, translation
+// documents rewritten whole).
 //
-// Usage: node scripts/seed.js
-// Reads: ../roadready-pl/content.json (regenerate first via
-//   `npx tsx scripts/export-content-json.ts` in the roadready-pl repo if stale)
+// Usage: node scripts/seed.js [path/to/content.json]
+// Default: ../../roadready-pl/content/katalog/content.json — the official
+//   ministry catalogue, produced by `python scripts/import_katalog.py` in the
+//   mobile repo. (The old default, ../../roadready-pl/content.json, is the
+//   110-question demo bank exported by `npx tsx scripts/export-content-json.ts`.)
 
 const fs = require('fs');
 const path = require('path');
@@ -11,7 +15,10 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 
 const serviceAccount = require('../serviceAccountKey.json');
-const contentPath = path.resolve(__dirname, '../../roadready-pl/content.json');
+const contentPath = path.resolve(
+  __dirname,
+  process.argv[2] ?? '../../roadready-pl/content/katalog/content.json',
+);
 
 initializeApp({ credential: cert(serviceAccount) });
 
@@ -153,6 +160,10 @@ async function main() {
       sourceRef: question.sourceRef,
       category: question.category ?? 'basic',
       points: question.points ?? 1,
+      // Catalogue fields (see ../src/lib/types.ts): licence categories the
+      // question is asked for, and the ministry's media file name.
+      licences: question.licences ?? [],
+      sourceMedia: question.sourceMedia ?? null,
       sortOrder: n,
       deletedAt: null,
     });
@@ -161,28 +172,40 @@ async function main() {
   await flush();
 
   // --- translations: one doc per locale under each topic -----------------
-  // Keyed by question id. Per topic rather than per set so a full 2,000+
-  // question bank stays well under Firestore's 1 MB document limit.
+  // Keyed by question id. Per topic rather than per set so a full 3,500
+  // question bank stays under Firestore's 1 MB document limit (the biggest
+  // topic in the catalogue comes to ~130 KB per locale). Written whole, not
+  // merged: an entry for a question that left the topic must go with it.
+  // Locale documents the file does not carry are deleted for the same reason.
   let translated = 0;
-  for (const [locale, byQuestion] of Object.entries(translations)) {
-    for (const topic of topics) {
+  const fileLocales = new Set(Object.keys(translations));
+  for (const topic of topics) {
+    const trCollection = testsetRef.collection('topics').doc(topic.id).collection('translations');
+    const existing = await trCollection.get();
+    for (const doc of existing.docs) {
+      if (fileLocales.has(doc.id)) continue;
+      batch.delete(doc.ref);
+      ops += 1;
+    }
+    for (const [locale, byQuestion] of Object.entries(translations)) {
       const entries = {};
       for (const question of questions) {
         if (question.topicId !== topic.id) continue;
         const tr = byQuestion[question.id];
         if (tr) entries[question.id] = tr;
       }
-      if (!Object.keys(entries).length) continue;
-      set(testsetRef.collection('topics').doc(topic.id).collection('translations').doc(locale), {
-        locale,
-        questions: entries,
-        deletedAt: null,
-      });
+      if (!Object.keys(entries).length) {
+        batch.delete(trCollection.doc(locale));
+        ops += 1;
+        continue;
+      }
+      batch.set(trCollection.doc(locale), { locale, questions: entries, deletedAt: null });
+      ops += 1;
       translated += Object.keys(entries).length;
-      if (ops >= 400) await flush();
     }
+    // These documents are big; a commit is capped at 10 MB, so flush per topic.
+    await flush();
   }
-  await flush();
   console.log(`Translations: ${translated} question entries across ${Object.keys(translations).length} locale(s).`);
 
   console.log('Seed complete.');

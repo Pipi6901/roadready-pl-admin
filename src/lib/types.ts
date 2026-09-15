@@ -83,9 +83,25 @@ export interface Question {
   points?: number;
   /** Normally inherited from the topic; stored so a question can be read alone. */
   category?: QuestionCategory;
+  /**
+   * Licence categories the question is asked for — the ministry's codes (AM,
+   * A1, A2, A, B1, B, C1, C, D1, D, T, PT), as listed per question in the
+   * official catalogue. Empty or missing means every category. The app
+   * filters its whole bank by the learner's chosen licence.
+   */
+  licences?: string[];
+  /**
+   * File name of the picture or clip the official catalogue attaches to this
+   * question (e.g. "1a15_00001.jpg"). Read-only here: it is what the media
+   * import matches against when the ministry's archive is uploaded.
+   */
+  sourceMedia?: string | null;
   sortOrder: number;
   deletedAt: string | null;
 }
+
+/** All licence codes in the order the catalogue and the app list them. */
+export const LICENCE_CODES = ['AM', 'A1', 'A2', 'A', 'B1', 'B', 'C1', 'C', 'D1', 'D', 'T', 'PT'] as const;
 
 export interface Locale {
   code: string;

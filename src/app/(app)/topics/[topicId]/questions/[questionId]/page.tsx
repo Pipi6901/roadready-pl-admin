@@ -7,7 +7,7 @@ import React from 'react';
 
 import { questionsCollection } from '@/lib/content';
 import { mediaCollection } from '@/lib/media';
-import type { AnswerOption, Media, Question, QuestionType } from '@/lib/types';
+import { LICENCE_CODES, type AnswerOption, type Media, type Question, type QuestionType } from '@/lib/types';
 
 interface MediaRow extends Media {
   id: string;
@@ -33,6 +33,8 @@ export default function QuestionEditPage() {
   const [subtopic, setSubtopic] = React.useState('');
   const [sourceRef, setSourceRef] = React.useState('');
   const [points, setPoints] = React.useState<1 | 2 | 3>(1);
+  const [licences, setLicences] = React.useState<string[]>([]);
+  const [sourceMedia, setSourceMedia] = React.useState<string | null>(null);
   const [mediaId, setMediaId] = React.useState<string | null>(null);
   const [initialMediaId, setInitialMediaId] = React.useState<string | null>(null);
   const [media, setMedia] = React.useState<MediaRow[] | null>(null);
@@ -58,6 +60,8 @@ export default function QuestionEditPage() {
         setSubtopic(q.subtopic ?? '');
         setSourceRef(q.sourceRef);
         setPoints((q.points === 2 || q.points === 3 ? q.points : 1) as 1 | 2 | 3);
+        setLicences(q.licences ?? []);
+        setSourceMedia(q.sourceMedia ?? null);
         setMediaId(q.mediaId ?? null);
         setInitialMediaId(q.mediaId ?? null);
       }
@@ -94,6 +98,8 @@ export default function QuestionEditPage() {
         subtopic: subtopic.trim() || null,
         sourceRef: sourceRef.trim(),
         points,
+        // Kept in catalogue order so two questions with the same set compare equal.
+        licences: LICENCE_CODES.filter((c) => licences.includes(c)),
         deletedAt: null,
       };
 
@@ -188,9 +194,8 @@ export default function QuestionEditPage() {
         </div>
 
         <label className="block text-sm">
-          Explanation
+          Explanation (optional — the official catalogue has none; the app then shows only the correct answer)
           <textarea
-            required
             value={explanation}
             onChange={(e) => setExplanation(e.target.value)}
             rows={3}
@@ -237,6 +242,43 @@ export default function QuestionEditPage() {
             className="mt-1 block w-full rounded-md border border-black/15 px-3 py-2"
           />
         </label>
+
+        <fieldset className="block text-sm">
+          <legend>Licence categories</legend>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {LICENCE_CODES.map((code) => {
+              const on = licences.includes(code);
+              return (
+                <label
+                  key={code}
+                  className={`cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium ${
+                    on ? 'border-black bg-black text-white' : 'border-black/15 text-black/70'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    className="sr-only"
+                    checked={on}
+                    onChange={() =>
+                      setLicences((prev) => (on ? prev.filter((c) => c !== code) : [...prev, code]))
+                    }
+                  />
+                  {code}
+                </label>
+              );
+            })}
+          </div>
+          <span className="mt-1 block text-xs text-black/50">
+            Which licences this question is asked for. None selected = every category.
+          </span>
+        </fieldset>
+
+        {sourceMedia ? (
+          <p className="text-sm">
+            Catalogue media: <code className="rounded bg-black/5 px-1">{sourceMedia}</code>
+            <span className="ml-2 text-xs text-black/50">(from the ministry's archive — matched when media is imported)</span>
+          </p>
+        ) : null}
 
         <label className="block text-sm">
           Points

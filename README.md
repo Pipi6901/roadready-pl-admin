@@ -1,8 +1,13 @@
-# RoadReady Admin
+# RoadReady Admin (PL)
 
-Content admin for [RoadReady](../roadready) — invite-only, Firestore-backed. Implements
-`roadready/docs/00-decisions.md` ADR-003/004/015. Live at **https://roadready-admin.web.app**
-(Blaze plan approved — Storage, Cloud Functions, and this Hosting site are all deployed).
+Content admin for [RoadReady PL](../roadready-pl) — invite-only, Firestore-backed. Implements
+`roadready/docs/00-decisions.md` ADR-003/004/015. Live at **https://roadready-pl-admin.web.app**
+on Firebase project `roadready-pl` (Blaze). Cloud Functions and this Hosting site are deployed;
+the mobile app reads the published bank from https://roadready-pl.web.app/content.json.
+
+First admin: `node scripts/invite-first-admin.js <email>` prints a set-your-password link —
+no password ever passes through chat or email. Needs Authentication (Email/Password) enabled
+in the Firebase console first.
 
 ## Setup
 
@@ -12,7 +17,7 @@ npm install
 
 You need `serviceAccountKey.json` in the repo root (never committed — see `.gitignore`) to
 run the scripts in `scripts/`. Get it from Firebase Console → Project settings → Service
-accounts → Generate new private key, for the `roadready-80e53` project.
+accounts → Generate new private key, for the `roadready-pl` project.
 
 ## Running locally
 
@@ -59,7 +64,7 @@ Sign in as an `admin`, go to **Users**, enter an email + role. This calls the `i
 Cloud Function, which creates the Firebase Auth account and emails a "set your password" link
 (Firebase's built-in template — no SendGrid or other email service involved). Note: the
 default Firebase template names the sender/subject after the project ID
-(`roadready-80e53`) and can land in spam on first send — customize it in Firebase Console →
+(`roadready-pl`) and can land in spam on first send — customize it in Firebase Console →
 Authentication → Templates if that matters, and tell the first invitee to check spam.
 
 ## Media library
@@ -74,15 +79,15 @@ file — detach it from every question first.
 The **Publish** button on the Topics page (admin role only) calls `publishTestSet`, which
 validates the draft test-set, reassembles it into the same `content.json` shape
 `roadready/src/data/remoteContent.ts` already fetches, and deploys it to the
-`roadready-80e53` Hosting site — the mobile app picks it up on next launch, no app rebuild.
+`roadready-pl` Hosting site — the mobile app picks it up on next launch, no app rebuild.
 
 ## Deploying changes
 
 ```bash
-firebase deploy --only firestore:rules,storage,functions,hosting --project roadready-80e53
+firebase deploy --only firestore:rules,storage,functions,hosting --project roadready-pl
 ```
 
-One-time setup this needed (already done for `roadready-80e53`, listed for reference / a
+One-time setup this needed (done for `roadready-pl` except where noted, listed for reference / a
 future project):
 - Firebase Storage "Get Started" clicked once in Console → Storage (separate from the Blaze
   upgrade itself — a manual bucket-provisioning step every project needs regardless of plan).
@@ -90,10 +95,10 @@ future project):
   `NEXT_PUBLIC_FIREBASE_API_KEY`) — used by `inviteUser` to send the invite email via the
   Identity Toolkit REST API. (Named `WEB_API_KEY`, not `FIREBASE_WEB_API_KEY` — Cloud
   Functions reserves the `FIREBASE_` env var prefix.)
-- The Cloud Functions runtime service account
-  (`{project-number}-compute@developer.gserviceaccount.com`) needs the **Firebase Hosting
-  Admin** IAM role (Console → IAM & Admin → IAM) — `publishTestSet` deploys to Hosting via
-  its REST API directly, without the `firebase` CLI.
+- No IAM step here, unlike the British project: `functions/index.js` runs both functions as
+  the Firebase Admin SDK service account (`setGlobalOptions({ serviceAccount })`), which
+  already has Hosting deploy rights — `publishTestSet` deploys to Hosting via its REST API
+  directly, without the `firebase` CLI. Deploying needs a project owner's CLI login (actAs).
 - `firebase hosting:sites:create roadready-admin` + `firebase experiments:enable
   webframeworks` — this app's own Hosting site, deployed via Firebase's Next.js SSR
   integration (a `ssrroadreadyadmin` Cloud Function, separate from `inviteUser`/`publishTestSet`).

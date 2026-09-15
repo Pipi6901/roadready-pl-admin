@@ -1,10 +1,24 @@
 const crypto = require('crypto');
 const zlib = require('zlib');
+const { setGlobalOptions } = require('firebase-functions/v2');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { initializeApp } = require('firebase-admin/app');
 const { getAuth } = require('firebase-admin/auth');
 const { getFirestore } = require('firebase-admin/firestore');
 const { GoogleAuth } = require('google-auth-library');
+
+// Both functions run as the Firebase Admin SDK service account rather than
+// the default compute one. publishTestSet deploys to Hosting through the REST
+// API, and that needs Hosting deploy rights on whatever identity the function
+// runs under: the British project got there by granting the compute account
+// the Firebase Hosting Admin role in the Cloud console. This project's owner
+// does not use that console, and the Admin SDK account already has those
+// rights — it is what deploys content.json from the command line — so the
+// function borrows it instead, and no IAM change is needed. The deployer
+// needs to be a project owner (actAs on the account), which the CLI login is.
+setGlobalOptions({
+  serviceAccount: 'firebase-adminsdk-fbsvc@roadready-pl.iam.gserviceaccount.com',
+});
 
 initializeApp();
 const auth = getAuth();

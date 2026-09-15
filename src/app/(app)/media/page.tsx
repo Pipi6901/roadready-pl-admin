@@ -10,11 +10,11 @@ interface MediaRow extends Media {
   id: string;
 }
 
-const LICENCES: Media['licence'][] = ['DVSA', 'OGL-v3', 'own'];
+const LICENCES: Media['licence'][] = ['gov-pl', 'own', 'DVSA', 'OGL-v3'];
 
 export default function MediaLibraryPage() {
   const [items, setItems] = React.useState<MediaRow[] | null>(null);
-  const [licence, setLicence] = React.useState<Media['licence']>('DVSA');
+  const [licence, setLicence] = React.useState<Media['licence']>('own');
   const [filter, setFilter] = React.useState<Media['licence'] | 'all'>('all');
   const [uploading, setUploading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);

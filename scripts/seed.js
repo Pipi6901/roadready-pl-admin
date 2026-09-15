@@ -124,10 +124,12 @@ async function main() {
   // right alongside the new ones. (The first PL seed carried British
   // questions with 'q-road-signs-*' ids; this is what clears them.)
   const wanted = new Set(questions.map((q) => q.id));
+  const existingIds = new Set();
   let removed = 0;
   for (const topic of topics) {
     const existing = await testsetRef.collection('topics').doc(topic.id).collection('questions').get();
     for (const doc of existing.docs) {
+      existingIds.add(doc.id);
       if (wanted.has(doc.id)) continue;
       batch.delete(doc.ref);
       ops += 1;
@@ -155,7 +157,12 @@ async function main() {
       options: question.options,
       correctOptionId: question.correctOptionId,
       explanation: question.explanation,
-      mediaId: question.mediaId,
+      // The catalogue export carries no mediaId — attachments are made by
+      // scripts/import-media.js after the fact. Merging null over them on a
+      // re-seed would detach every picture, so an existing document keeps
+      // its own unless the file names one; a new document gets an explicit
+      // null for the editor to read.
+      ...(question.mediaId || !existingIds.has(question.id) ? { mediaId: question.mediaId ?? null } : {}),
       subtopic: question.subtopic,
       sourceRef: question.sourceRef,
       category: question.category ?? 'basic',

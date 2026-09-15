@@ -46,17 +46,38 @@ hardcoded to `countries/GB` (`src/lib/content.ts`'s `PRIMARY_COUNTRY_CODE`) rath
 offering a country picker. The Firestore schema itself still supports more countries if that
 ever changes.
 
-## Re-seeding from the mobile app's demo bundle
+## Seeding the official catalogue
 
-If `roadready/src/data/demo-bundle.ts` changes and you want the admin's Firestore to match:
+The bank is the Ministry of Infrastructure's published catalogue (3,518 questions), turned
+into `content.json` by the mobile repo and loaded into Firestore here:
 
 ```bash
-cd ../roadready && npx tsx scripts/export-content-json.ts   # writes roadready/content.json
-cd ../roadready-admin && node scripts/seed.js                # upserts it into Firestore
+cd ../roadready-pl && python scripts/import_katalog.py "path/to/KATALOG_dla_kandydatów_na_kierowców_MMYYYY.xlsx"
+cd ../roadready-admin-pl && node scripts/seed.js            # default: ../roadready-pl/content/katalog/content.json
 ```
 
-`seed.js` is `{ merge: true }` — safe to re-run, won't clobber content already edited in the
-admin.
+`seed.js` upserts questions with `{ merge: true }`, deletes questions the file no longer has,
+rewrites the per-topic translation documents whole, and leaves a question's `mediaId` alone
+unless the file names one — so re-running after a catalogue update keeps attached media.
+Pass another `content.json` path as the first argument to seed something else (e.g. the
+110-question demo bank from `npx tsx scripts/export-content-json.ts`).
+
+## Importing the catalogue's media
+
+Pictures and clips come as a separate archive on the same gov.pl page. Unpack it anywhere
+and run:
+
+```bash
+node scripts/import-media.js "D:/path/to/unpacked" --dry-run   # report what matches
+node scripts/import-media.js "D:/path/to/unpacked"             # upload + attach
+```
+
+The script matches files to questions by the catalogue's file name (`sourceMedia`), uploads
+each needed file once to `media/{mediaId}/{filename}`, writes the `media/{mediaId}` document
+(licence `gov-pl`) and sets `mediaId` on every question that names the file. Clips are WMV
+and need `ffmpeg` on PATH (or `FFMPEG=…`) to be transcoded to MP4; without it they are
+skipped and counted, and the run can simply be repeated later — everything is idempotent.
+`--limit N` and `--only jpg|wmv` narrow a run. Publish afterwards.
 
 ## Inviting people
 
@@ -70,7 +91,7 @@ Authentication → Templates if that matters, and tell the first invitee to chec
 ## Media library
 
 **Media** in the nav: upload images/video (50 MB cap, `image/*` or `video/*`), tag with a
-licence (`DVSA` / `OGL-v3` / `own`), pick from the library on a question's edit form. Delete
+licence (`gov-pl` for the ministry's files, `own`, or the British `DVSA` / `OGL-v3`), pick from the library on a question's edit form. Delete
 is blocked (both in the UI and in `firestore.rules`) while a question still references the
 file — detach it from every question first.
 

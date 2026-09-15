@@ -123,6 +123,9 @@ export interface Media {
   durationMs: number | null;
   hazardWindow: { startMs: number; endMs: number } | null;
   usedByQuestions: string[];
-  licence: 'DVSA' | 'OGL-v3' | 'own';
+  /** 'gov-pl': the Ministry of Infrastructure's own files, imported by scripts/import-media.js. */
+  licence: 'gov-pl' | 'own' | 'DVSA' | 'OGL-v3';
+  /** File name in the ministry's archive, for imported media (matches Question.sourceMedia). */
+  sourceName?: string;
   deletedAt: string | null;
 }

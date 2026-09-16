@@ -121,6 +121,8 @@ export interface Media {
   width: number | null;
   height: number | null;
   durationMs: number | null;
+  /** Size on Storage, set by scripts/import-media.js; the app sums these for the offline pack. */
+  bytes?: number;
   hazardWindow: { startMs: number; endMs: number } | null;
   usedByQuestions: string[];
   /** 'gov-pl': the Ministry of Infrastructure's own files, imported by scripts/import-media.js. */

@@ -20,16 +20,21 @@
 // name, an existing Storage object is not re-uploaded, an existing media
 // document is only re-linked.
 //
-// Usage: node scripts/import-media.js <folder> [--dry-run] [--limit N] [--only jpg|wmv]
+// Usage: node scripts/import-media.js <folder> [--dry-run] [--limit N] [--only jpg|wmv] [--replace]
 //   --dry-run  match and report, upload nothing, write nothing
 //   --limit N  process at most N files (for a first look)
 //   --only     restrict to pictures or to clips
+//   --replace  re-upload files that already have a media document (new
+//              download URL, refreshed size) — for swapping in a recompressed
+//              set; without it an existing document is only re-linked
 
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
-const { execFileSync, spawnSync } = require('child_process');
+const { execFile, execFileSync, spawnSync } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getStorage } = require('firebase-admin/storage');
@@ -37,7 +42,10 @@ const { getStorage } = require('firebase-admin/storage');
 const serviceAccount = require('../serviceAccountKey.json');
 const BUCKET = 'roadready-pl.firebasestorage.app';
 const COUNTRY = 'PL';
-const CONCURRENCY = 6;
+// Uploads are I/O-bound and run six at a time; transcodes are CPU-bound and
+// ffmpeg already uses every core, so `--only wmv` runs two at a time
+// (override either with CONCURRENCY=n).
+const CONCURRENCY = Number(process.env.CONCURRENCY) || (process.argv.includes('wmv') ? 2 : 6);
 
 initializeApp({ credential: cert(serviceAccount), storageBucket: BUCKET });
 const db = getFirestore();
@@ -52,6 +60,7 @@ const limitIdx = args.indexOf('--limit');
 const limit = limitIdx >= 0 ? Number(args[limitIdx + 1]) : Infinity;
 const onlyIdx = args.indexOf('--only');
 const only = onlyIdx >= 0 ? args[onlyIdx + 1] : null;
+const replace = args.includes('--replace');
 if (!folder || !fs.existsSync(folder)) {
   console.error('Usage: node scripts/import-media.js <folder> [--dry-run] [--limit N] [--only jpg|wmv]');
   process.exit(1);
@@ -63,14 +72,23 @@ const IMAGE_EXT = new Set(['.jpg', '.jpeg', '.png']);
 const VIDEO_EXT = new Set(['.wmv', '.mp4', '.mov', '.avi']);
 const CONTENT_TYPES = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.mp4': 'video/mp4' };
 
-/** Every file under the folder, keyed by lower-cased base name. */
+/**
+ * Lookup key for a file name: lower-cased, runs of whitespace collapsed. The
+ * July 2026 catalogue names "W11 korytarz z 005.jpg" while the archive has
+ * two spaces before the "z" — the same picture, so match them.
+ */
+function keyOf(name) {
+  return name.toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+/** Every file under the folder, keyed by normalised base name. */
 function indexFiles(root) {
   const byName = new Map();
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) walk(full);
-      else byName.set(entry.name.toLowerCase(), full);
+      else byName.set(keyOf(entry.name), full);
     }
   };
   walk(root);
@@ -142,21 +160,30 @@ function videoInfo(ffprobe, file) {
 }
 
 /**
- * WMV -> MP4 the phones can play: H.264 baseline-ish, AAC, faststart so the
- * clip begins before it has fully downloaded. Output cached beside the
- * source in an `_mp4` folder; an existing file is reused.
+ * WMV -> MP4 the phones can play: H.264 main profile, AAC, faststart so the
+ * clip begins before it has fully downloaded. The archive's clips are
+ * 1024x576 at 50 fps; 25 fps and a 1280 px cap halve the encode and the
+ * download for no visible loss on a phone. Output cached beside the source
+ * in an `_mp4` folder; an existing file is reused.
  */
-function transcode(ffmpeg, src) {
+async function transcode(ffmpeg, src) {
   const outDir = path.join(path.dirname(src), '_mp4');
   fs.mkdirSync(outDir, { recursive: true });
   const out = path.join(outDir, path.basename(src).replace(/\.[^.]+$/, '.mp4'));
   if (fs.existsSync(out) && fs.statSync(out).size > 0) return out;
-  execFileSync(
+  // Written to a temp name and renamed, so a crash mid-encode cannot leave a
+  // truncated file that the next run would take for a finished one.
+  const part = `${out}.part.mp4`;
+  // crf 25 at 576p: ~1.8 MB for a ten-second clip, against 2.7 MB at the
+  // x264 default of 23 — the difference is invisible on a phone and adds up
+  // to a gigabyte across the archive.
+  await execFileAsync(
     ffmpeg,
-    ['-y', '-v', 'error', '-i', src, '-c:v', 'libx264', '-profile:v', 'main', '-pix_fmt', 'yuv420p', '-crf', '23',
-      '-preset', 'fast', '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', out],
-    { stdio: 'inherit' },
+    ['-y', '-v', 'error', '-i', src, '-c:v', 'libx264', '-profile:v', 'main', '-pix_fmt', 'yuv420p', '-crf', '25',
+      '-preset', 'fast', '-r', '25', '-vf', "scale='min(1280,iw)':-2", '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', part],
+    { maxBuffer: 16 * 1024 * 1024 },
   );
+  fs.renameSync(part, out);
   return out;
 }
 
@@ -218,10 +245,10 @@ async function main() {
     if (only === 'jpg' && isVideo) continue;
     if (only === 'wmv' && !isVideo) continue;
 
-    let file = files.get(sourceName.toLowerCase());
+    let file = files.get(keyOf(sourceName));
     if (isVideo) {
       // Prefer a ready MP4 with the same stem; else the WMV, transcoded below.
-      const mp4 = files.get(sourceName.toLowerCase().replace(/\.[^.]+$/, '.mp4'));
+      const mp4 = files.get(keyOf(sourceName).replace(/\.[^.]+$/, '.mp4'));
       if (mp4) file = mp4;
       else if (!file) { missing.push(sourceName); continue; }
       else if (!ffmpeg) { skippedClips.push(sourceName); continue; }
@@ -249,16 +276,25 @@ async function main() {
     const mediaId = mediaIdFor(sourceName);
     try {
       let file = job.file;
-      if (isVideo && path.extname(file).toLowerCase() !== '.mp4') file = transcode(ffmpeg, file);
+      if (isVideo && path.extname(file).toLowerCase() !== '.mp4') file = await transcode(ffmpeg, file);
       const filename = path.basename(file);
       const ext = path.extname(filename).toLowerCase();
       const storagePath = `media/${mediaId}/${filename}`;
       const object = bucket.file(storagePath);
 
       let media = existing.get(mediaId);
+      if (media && replace) {
+        // Same document id and path, new bytes: the old object (possibly a
+        // different file name after transcoding) goes, so nothing stale is
+        // left to serve.
+        if (media.storagePath && media.storagePath !== storagePath) {
+          await bucket.file(media.storagePath).delete({ ignoreNotFound: true });
+        }
+        media = null;
+      }
       if (!media) {
         const token = crypto.randomUUID();
-        const [exists] = await object.exists();
+        const [exists] = replace ? [false] : await object.exists();
         if (!exists) {
           await object.save(fs.readFileSync(file), {
             resumable: false,
@@ -285,6 +321,9 @@ async function main() {
           width: dims.width,
           height: dims.height,
           durationMs: dims.durationMs,
+          // File size, so the app can say how big the offline pack is
+          // before the learner taps download.
+          bytes: fs.statSync(file).size,
           hazardWindow: null,
           usedByQuestions: [],
           // Public-sector material published by the Ministry of Infrastructure.
@@ -311,7 +350,7 @@ async function main() {
     } catch (err) {
       failed.push(`${sourceName}: ${err.message}`);
     }
-    if ((i + 1) % 50 === 0) console.log(`  … ${i + 1}/${todo.length}`);
+    if ((i + 1) % 25 === 0) console.log(`  … ${i + 1}/${todo.length}  (uploaded ${uploaded}, reused ${reused}, failed ${failed.length})`);
   });
 
   console.log(`Done. uploaded ${uploaded}, reused ${reused}, questions linked ${linked}, failed ${failed.length}`);

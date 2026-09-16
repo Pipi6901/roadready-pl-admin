@@ -199,6 +199,7 @@ exports.publishTestSet = onCall({ timeoutSeconds: 540, memory: '1GiB' }, async (
       width: m.width ?? null,
       height: m.height ?? null,
       durationMs: m.durationMs ?? null,
+      bytes: m.bytes ?? null,
     };
   }
 

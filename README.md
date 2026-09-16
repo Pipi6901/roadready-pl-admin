@@ -77,7 +77,14 @@ each needed file once to `media/{mediaId}/{filename}`, writes the `media/{mediaI
 (licence `gov-pl`) and sets `mediaId` on every question that names the file. Clips are WMV
 and need `ffmpeg` on PATH (or `FFMPEG=…`) to be transcoded to MP4; without it they are
 skipped and counted, and the run can simply be repeated later — everything is idempotent.
-`--limit N` and `--only jpg|wmv` narrow a run. Publish afterwards.
+`--limit N` and `--only jpg|wmv` narrow a run; `--replace` re-uploads files that already have
+a document (for swapping in a recompressed set). Run one import at a time — two processes
+encoding into the same `_mp4` cache corrupt each other's output.
+
+Before publishing, `node scripts/verify-media.js --fix` checks every media document against
+Storage (object present, download token matches, `bytes` right) and repairs what it can;
+`node scripts/backfill-media-bytes.js` fills `bytes` on documents from before that field
+existed. Then publish.
 
 ## Inviting people
 

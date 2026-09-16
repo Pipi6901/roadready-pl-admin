@@ -183,8 +183,24 @@ async function transcode(ffmpeg, src) {
       '-preset', 'fast', '-r', '25', '-vf', "scale='min(1280,iw)':-2", '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', part],
     { maxBuffer: 16 * 1024 * 1024 },
   );
-  fs.renameSync(part, out);
+  await renameWithRetry(part, out);
   return out;
+}
+
+/**
+ * Windows can still hold a just-closed file for a moment (indexer, antivirus),
+ * and rename then fails with EBUSY; a few short retries are all it needs.
+ */
+async function renameWithRetry(from, to) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      fs.renameSync(from, to);
+      return;
+    } catch (err) {
+      if (attempt >= 10 || !['EBUSY', 'EPERM', 'EACCES'].includes(err.code)) throw err;
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
 }
 
 /** The download URL the client SDK would hand back — same token scheme. */

@@ -62,6 +62,23 @@ unless the file names one — so re-running after a catalogue update keeps attac
 Pass another `content.json` path as the first argument to seed something else (e.g. the
 110-question demo bank from `npx tsx scripts/export-content-json.ts`).
 
+## Translating the catalogue
+
+The ministry translates into English, German and Ukrainian only (and Ukrainian covers two
+thirds of the bank). Russian, Spanish, Turkish and the Ukrainian gaps are translated with
+Claude:
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-… node scripts/translate-questions.js --dry-run      # what would be sent
+ANTHROPIC_API_KEY=sk-ant-… node scripts/translate-questions.js --lang ru --limit 2   # 40 questions to eyeball
+ANTHROPIC_API_KEY=sk-ant-… node scripts/translate-questions.js                # everything
+```
+
+Output lands in `../roadready-pl/content/katalog/translations/{lang}.json`, resumable batch by
+batch; `scripts/import_katalog.py` in the mobile repo merges it into `content.json` (official
+translations win), then seed and publish as usual. `--model` picks the model (default
+`claude-opus-5`).
+
 ## Importing the catalogue's media
 
 Pictures and clips come as a separate archive on the same gov.pl page. Unpack it anywhere
